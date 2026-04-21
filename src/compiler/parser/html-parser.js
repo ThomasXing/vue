@@ -13,7 +13,10 @@ import { makeMap, no } from 'shared/util'
 import { isNonPhrasingTag } from 'web/compiler/util'
 
 // Regular Expressions for parsing tags and attributes
-const attribute = /^\s*([^\s"'<>\/=]+)(?:\s*(=)\s*(?:"([^"]*)"+|'([^']*)'+|([^\s"'=<>`]+)))?/
+// const attribute = /^\s*([^\s"'<>\/=]+)(?:\s*(=)\s*(?:"([^"]*)"+|'([^']*)'+|([^\s"'=<>`]+)))?/
+const attribute = /^\s*([^\s"'<>\/=]+)(?:\s*(=)\s*(?:"([^"]{0,1000})"|'([^']{0,1000})'|([^\s"'=<>`]+)))?/
+const MAX_TAG_CONTENT_LENGTH = 50000 // 标签内容最大长度限制
+
 // could use https://www.w3.org/TR/1999/REC-xml-names-19990114/#NT-QName
 // but for Vue templates we can enforce a simple charset
 const ncname = '[a-zA-Z_][\\w\\-\\.]*'
@@ -129,18 +132,42 @@ export function parseHTML (html, options) {
           rest = html.slice(textEnd)
         }
         text = html.substring(0, textEnd)
-        advance(textEnd)
+        // advance(textEnd)
+        if (text) {
+        // 【修复】限制文本内容长度
+          if (text.length > MAX_TAG_CONTENT_LENGTH) {
+              text = text.substring(0, MAX_TAG_CONTENT_LENGTH)
+              if (options.warn) {
+                options.warn(
+                  `Text content exceeds ${MAX_TAG_CONTENT_LENGTH} characters, truncated to prevent ReDoS`,
+                  { start: index, end: index + text.length }
+                )
+              }
+            }
+            advance(textEnd)
+        }
       }
 
       if (textEnd < 0) {
         text = html
         html = ''
       }
-
       if (options.chars && text) {
         options.chars(text)
       }
     } else {
+      // 【修复】处理script/style/textarea时，先检查长度，超过限制直接截断
+      if (html.length > MAX_TAG_CONTENT_LENGTH) {
+        // 超长时触发警告（仅开发环境）
+        if (options.warn) {
+          options.warn(
+            `Content length of <${lastTag}> exceeds ${MAX_TAG_CONTENT_LENGTH} characters, potential ReDoS attack`,
+            { start: index, end: index + html.length }
+          )
+        }
+        // 截断内容，避免正则匹配超长字符串
+        html = html.slice(0, MAX_TAG_CONTENT_LENGTH)
+      }
       let endTagLength = 0
       const stackedTag = lastTag.toLowerCase()
       const reStackedTag = reCache[stackedTag] || (reCache[stackedTag] = new RegExp('([\\s\\S]*?)(</' + stackedTag + '[^>]*>)', 'i'))
@@ -161,7 +188,18 @@ export function parseHTML (html, options) {
       })
       index += html.length - rest.length
       html = rest
-      parseEndTag(stackedTag, index - endTagLength, index)
+      //【修复】无匹配结束符时，主动清理栈，避免无限循环
+      if (endTagLength === 0 && options.warn) {
+        options.warn(`Unclosed <${stackedTag}> tag, potential ReDoS attack`, {
+          start: index - html.length,
+          end: index
+        })
+        // 强制关闭标签，清理栈
+        parseEndTag(stackedTag, index - html.length, index)
+      } else {
+        parseEndTag(stackedTag, index - endTagLength, index)
+      }
+      // parseEndTag(stackedTag, index - endTagLength, index)
     }
 
     if (html === last) {

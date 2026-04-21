@@ -171,14 +171,15 @@ function elementToOpenTagSegments (el, state): Array<StringSegment> {
     segments.push({ type: EXPRESSION, value: `_ssrDOMProps(${binding})` })
   }
   // class
-  if (el.staticClass || el.classBinding) {
+  const hasStaticClass = Object.prototype.hasOwnProperty.call(el, 'staticClass')
+  if (hasStaticClass || Object.prototype.hasOwnProperty.call(el, 'classBinding')) {
     segments.push.apply(
       segments,
-      genClassSegments(el.staticClass, el.classBinding)
+      genClassSegments(hasStaticClass ? el.staticClass : null, el.classBinding)
     )
   }
   // style & v-show
-  if (el.staticStyle || el.styleBinding || el.attrsMap['v-show']) {
+  if (Object.prototype.hasOwnProperty.call(el, 'staticStyle') || Object.prototype.hasOwnProperty.call(el, 'styleBinding') || el.attrsMap['v-show']) {
     segments.push.apply(
       segments,
       genStyleSegments(

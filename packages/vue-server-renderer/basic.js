@@ -2748,10 +2748,10 @@
 
   function genData (el) {
     var data = '';
-    if (el.staticClass) {
+    if (Object.prototype.hasOwnProperty.call(el, 'staticClass')) {
       data += "staticClass:" + (el.staticClass) + ",";
     }
-    if (el.classBinding) {
+    if (Object.prototype.hasOwnProperty.call(el, 'classBinding')) {
       data += "class:" + (el.classBinding) + ",";
     }
     return data
@@ -2792,10 +2792,10 @@
 
   function genData$1 (el) {
     var data = '';
-    if (el.staticStyle) {
+    if (Object.prototype.hasOwnProperty.call(el, 'staticStyle')) {
       data += "staticStyle:" + (el.staticStyle) + ",";
     }
-    if (el.styleBinding) {
+    if (Object.prototype.hasOwnProperty.call(el, 'styleBinding')) {
       data += "style:(" + (el.styleBinding) + "),";
     }
     return data
@@ -2807,7 +2807,7 @@
     genData: genData$1
   };
 
-  var commonjsGlobal = typeof window !== 'undefined' ? window : typeof global !== 'undefined' ? global : typeof self !== 'undefined' ? self : {};
+  var commonjsGlobal = typeof globalThis !== 'undefined' ? globalThis : typeof window !== 'undefined' ? window : typeof global !== 'undefined' ? global : typeof self !== 'undefined' ? self : {};
 
   function createCommonjsModule(fn, module) {
   	return module = { exports: {} }, fn(module, module.exports), module.exports;
@@ -3157,7 +3157,10 @@
    */
 
   // Regular Expressions for parsing tags and attributes
-  var attribute = /^\s*([^\s"'<>\/=]+)(?:\s*(=)\s*(?:"([^"]*)"+|'([^']*)'+|([^\s"'=<>`]+)))?/;
+  // const attribute = /^\s*([^\s"'<>\/=]+)(?:\s*(=)\s*(?:"([^"]*)"+|'([^']*)'+|([^\s"'=<>`]+)))?/
+  var attribute = /^\s*([^\s"'<>\/=]+)(?:\s*(=)\s*(?:"([^"]{0,1000})"|'([^']{0,1000})'|([^\s"'=<>`]+)))?/;
+  var MAX_TAG_CONTENT_LENGTH = 50000; // 标签内容最大长度限制
+
   // could use https://www.w3.org/TR/1999/REC-xml-names-19990114/#NT-QName
   // but for Vue templates we can enforce a simple charset
   var ncname = '[a-zA-Z_][\\w\\-\\.]*';
@@ -3273,18 +3276,42 @@
             rest = html.slice(textEnd);
           }
           text = html.substring(0, textEnd);
-          advance(textEnd);
+          // advance(textEnd)
+          if (text) {
+          // 【修复】限制文本内容长度
+            if (text.length > MAX_TAG_CONTENT_LENGTH) {
+                text = text.substring(0, MAX_TAG_CONTENT_LENGTH);
+                if (options.warn) {
+                  options.warn(
+                    ("Text content exceeds " + MAX_TAG_CONTENT_LENGTH + " characters, truncated to prevent ReDoS"),
+                    { start: index, end: index + text.length }
+                  );
+                }
+              }
+              advance(textEnd);
+          }
         }
 
         if (textEnd < 0) {
           text = html;
           html = '';
         }
-
         if (options.chars && text) {
           options.chars(text);
         }
       } else {
+        // 【修复】处理script/style/textarea时，先检查长度，超过限制直接截断
+        if (html.length > MAX_TAG_CONTENT_LENGTH) {
+          // 超长时触发警告（仅开发环境）
+          if (options.warn) {
+            options.warn(
+              ("Content length of <" + lastTag + "> exceeds " + MAX_TAG_CONTENT_LENGTH + " characters, potential ReDoS attack"),
+              { start: index, end: index + html.length }
+            );
+          }
+          // 截断内容，避免正则匹配超长字符串
+          html = html.slice(0, MAX_TAG_CONTENT_LENGTH);
+        }
         var endTagLength = 0;
         var stackedTag = lastTag.toLowerCase();
         var reStackedTag = reCache[stackedTag] || (reCache[stackedTag] = new RegExp('([\\s\\S]*?)(</' + stackedTag + '[^>]*>)', 'i'));
@@ -3305,7 +3332,18 @@
         });
         index += html.length - rest$1.length;
         html = rest$1;
-        parseEndTag(stackedTag, index - endTagLength, index);
+        //【修复】无匹配结束符时，主动清理栈，避免无限循环
+        if (endTagLength === 0 && options.warn) {
+          options.warn(("Unclosed <" + stackedTag + "> tag, potential ReDoS attack"), {
+            start: index - html.length,
+            end: index
+          });
+          // 强制关闭标签，清理栈
+          parseEndTag(stackedTag, index - html.length, index);
+        } else {
+          parseEndTag(stackedTag, index - endTagLength, index);
+        }
+        // parseEndTag(stackedTag, index - endTagLength, index)
       }
 
       if (html === last) {
@@ -5547,14 +5585,15 @@
       segments.push({ type: EXPRESSION, value: ("_ssrDOMProps(" + binding + ")") });
     }
     // class
-    if (el.staticClass || el.classBinding) {
+    var hasStaticClass = Object.prototype.hasOwnProperty.call(el, 'staticClass');
+    if (hasStaticClass || Object.prototype.hasOwnProperty.call(el, 'classBinding')) {
       segments.push.apply(
         segments,
-        genClassSegments(el.staticClass, el.classBinding)
+        genClassSegments(hasStaticClass ? el.staticClass : null, el.classBinding)
       );
     }
     // style & v-show
-    if (el.staticStyle || el.styleBinding || el.attrsMap['v-show']) {
+    if (Object.prototype.hasOwnProperty.call(el, 'staticStyle') || Object.prototype.hasOwnProperty.call(el, 'styleBinding') || el.attrsMap['v-show']) {
       segments.push.apply(
         segments,
         genStyleSegments(

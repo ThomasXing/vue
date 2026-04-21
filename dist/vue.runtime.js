@@ -1,6 +1,6 @@
 /*!
- * Vue.js v2.5.20
- * (c) 2014-2018 Evan You
+ * Vue.js v2.5.20-sonli_20260428
+ * (c) 2014-2026 Evan You
  * Released under the MIT License.
  */
 (function (global, factory) {
@@ -5161,7 +5161,7 @@
     value: FunctionalRenderContext
   });
 
-  Vue.version = '2.5.20';
+  Vue.version = '2.5.20-sonli_20260428';
 
   /*  */
 
